@@ -29,7 +29,7 @@ export class MongoService implements OnModuleInit, OnApplicationShutdown {
       this.target.collection('category_items').createIndex({ itemKey: 1 }),
       this.target.collection(QUARANTINE).createIndex({ runId: 1, _id: 1 }),
       this.target.collection(BATCHES).createIndex({ runId: 1, status: 1 }),
-      this.target.collection(RUNS).createIndex({ status: 1 }),
+      this.target.collection(RUNS).createIndex({ status: 1, startedAt: 1 }),
       this.target.collection(RECEIPTS).createIndex({ runId: 1 }),
     ]);
   }

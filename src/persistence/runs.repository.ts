@@ -36,6 +36,11 @@ export class RunsRepository {
     );
   }
 
+  /** Runs that have not finished, oldest first. */
+  findRunning(): AsyncIterable<RunDocument> {
+    return this.runs.find({ status: 'running' }).sort({ startedAt: 1 });
+  }
+
   /**
    * Moves a run out of `running` and stores its final counters and error sample.
    * Returns false (and changes nothing) when another worker already finished it.

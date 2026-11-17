@@ -37,6 +37,10 @@ export class BatchesRepository {
     return (await this.batches.findOne({ runId, status }, { projection: { _id: 1 } })) !== null;
   }
 
+  findPending(runId: string): AsyncIterable<BatchDocument> {
+    return this.batches.find({ runId, status: 'pending' }).sort({ _id: 1 });
+  }
+
   /** Moves a pending batch to a final status. A no-op if it already left `pending`. */
   async close(batchId: string, status: Exclude<BatchStatus, 'pending'>): Promise<void> {
     await this.batches.updateOne(

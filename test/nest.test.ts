@@ -20,8 +20,9 @@ import { ReceiptsRepository } from '../src/persistence/receipts.repository';
 import { RunsRepository } from '../src/persistence/runs.repository';
 import { SourceRepository } from '../src/persistence/source.repository';
 import { isFinalAttempt } from '../src/processing/attempts';
+import { RecoveryService } from '../src/processing/recovery.service';
 import { RunFinalizer } from '../src/processing/run-finalizer.service';
-import { DISPATCH_QUEUE } from '../src/queues/queue-names';
+import { BATCHES_QUEUE, DISPATCH_QUEUE } from '../src/queues/queue-names';
 import { CreateRunDto } from '../src/runs/dto/create-run.dto';
 import { ListErrorsQueryDto } from '../src/runs/dto/list-errors-query.dto';
 import { RunsService } from '../src/runs/runs.service';
@@ -255,6 +256,55 @@ test('RunFinalizer reads totals only after no batch is pending, and stores them 
     await finalizer({ run: run(), calls: loser, finishWins: false })
   ).finishIfComplete('run-1');
   assert.ok(!loser.includes('deleteReceipts'));
+});
+
+test('RecoveryService re-enqueues unfinished dispatch and pending batches with stable job IDs', async () => {
+  const dispatchJobs: unknown[][] = [];
+  const batchJobs: unknown[][] = [];
+  const finalized: string[] = [];
+  async function* iterate<T>(items: T[]) {
+    yield* items;
+  }
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      RecoveryService,
+      {
+        provide: RunsRepository,
+        useValue: {
+          findRunning: () =>
+            iterate([
+              run({ _id: 'undispatched', dispatchDone: false }),
+              run({ _id: 'dispatched' }),
+            ]),
+        },
+      },
+      {
+        provide: BatchesRepository,
+        useValue: {
+          findPending: (runId: string) => iterate(runId === 'dispatched' ? [{ _id: 'b1' }] : []),
+        },
+      },
+      {
+        provide: RunFinalizer,
+        useValue: { finishIfComplete: async (id: string) => finalized.push(id) },
+      },
+      {
+        provide: getQueueToken(DISPATCH_QUEUE),
+        useValue: { add: async (...args: unknown[]) => dispatchJobs.push(args) },
+      },
+      {
+        provide: getQueueToken(BATCHES_QUEUE),
+        useValue: { add: async (...args: unknown[]) => batchJobs.push(args) },
+      },
+    ],
+  }).compile();
+
+  assert.equal(await moduleRef.get(RecoveryService).recover(), 2);
+  assert.deepEqual(dispatchJobs, [
+    ['dispatch', { runId: 'undispatched' }, { jobId: 'undispatched' }],
+  ]);
+  assert.deepEqual(batchJobs, [['batch', { batchId: 'b1', runId: 'dispatched' }, { jobId: 'b1' }]]);
+  assert.deepEqual(finalized, ['dispatched']);
 });
 
 test('ApiKeyGuard is open without API_KEY and checks the header when configured', () => {

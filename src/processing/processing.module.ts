@@ -7,6 +7,7 @@ import { BatchService } from './batch.service';
 import { DispatchProcessor } from './dispatch.processor';
 import { DispatcherService } from './dispatcher.service';
 import { DocumentWriter } from './document-writer.service';
+import { RecoveryService } from './recovery.service';
 import { RunFinalizer } from './run-finalizer.service';
 
 /** Background workers: the dispatcher splits a run into batches, the batch processor transforms them. */
@@ -18,6 +19,7 @@ import { RunFinalizer } from './run-finalizer.service';
     DispatchProcessor,
     DispatcherService,
     DocumentWriter,
+    RecoveryService,
     RunFinalizer,
   ],
 })

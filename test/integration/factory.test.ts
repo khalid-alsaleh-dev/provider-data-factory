@@ -213,6 +213,28 @@ test(
           0,
         );
       });
+      await t.test('a run saved without its dispatch job is recovered on startup', async () => {
+        // Simulates a crash between saving the run and enqueueing it.
+        const upper = await app!.get(SourceRepository).upper('locations');
+        const runId = 'saved-without-job';
+        await mongo.target.collection<any>('runs').insertOne({
+          _id: runId,
+          status: 'running',
+          startedAt: new Date(),
+          dispatchDone: false,
+          checkpoints: { locations: { upper, count: 0 } },
+          counters: { read: 0, transformed: 0, written: 0, skipped: 0, failed: 0 },
+          errorSample: [],
+        });
+        await app!.close();
+        app = await boot();
+        base = await app.getUrl();
+        mongo = app.get(MongoService);
+        batchQueue = app.get<Queue>(getQueueToken(BATCHES_QUEUE));
+        const finished = await waitRun(runId);
+        assert.equal(finished.status, 'completed');
+        assert.equal(finished.counters.read, 1);
+      });
       await t.test(
         'dispatcher retries from its checkpoint and respects the collection limit',
         async (st) => {

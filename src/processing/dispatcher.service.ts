@@ -32,7 +32,12 @@ export class DispatcherService {
   async dispatch(runId: string, shouldStop: () => boolean): Promise<DispatchOutcome> {
     const run = await this.runs.findById(runId);
     if (!run) throw new Error(`Run ${runId} not found`);
-    if (run.status !== 'running' || run.dispatchDone) return 'done';
+    if (run.status !== 'running') return 'done';
+    if (run.dispatchDone) {
+      // A repeated job (e.g. re-queued by recovery) may find a run whose last step was lost.
+      await this.finalizer.finishIfComplete(runId);
+      return 'done';
+    }
 
     for (const collection of sources) {
       const checkpoint = run.checkpoints[collection];
