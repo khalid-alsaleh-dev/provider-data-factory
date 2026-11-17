@@ -30,7 +30,8 @@ services:
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       JOB_ATTEMPTS: ${JOB_ATTEMPTS:-3}
       BACKOFF_MS: ${BACKOFF_MS:-1000}
-      API_KEY: ${API_KEY:-}
+      # Required: the image runs with NODE_ENV=production, which refuses to start without a key.
+      API_KEY: ${API_KEY:?Set API_KEY (16+ characters) before starting the stack}
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_healthy }

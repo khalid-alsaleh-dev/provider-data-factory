@@ -70,6 +70,10 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
   const messages = validateSync(config, { skipMissingProperties: false }).flatMap((error) =>
     Object.values(error.constraints ?? {}),
   );
+  // Fail closed: a production deployment must not expose the runs API without a key.
+  if (raw.NODE_ENV === 'production' && !config.API_KEY) {
+    messages.push('API_KEY is required when NODE_ENV=production');
+  }
   if (config.RAW_DB === config.TARGET_DB) {
     messages.push('RAW_DB and TARGET_DB must be different databases');
   }

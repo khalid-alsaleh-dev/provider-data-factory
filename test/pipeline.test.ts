@@ -162,6 +162,11 @@ test('configuration fails early and operational errors redact credentials', () =
   assert.throws(() => validateEnvironment({ PORT: 'abc' }), /PORT/);
   assert.throws(() => validateEnvironment({ REDIS_URL: 'https://example.com' }), /REDIS_URL/);
   assert.throws(() => validateEnvironment({ API_KEY: 'short' }), /API_KEY/);
+  assert.throws(() => validateEnvironment({ NODE_ENV: 'production' }), /API_KEY is required/);
+  assert.equal(
+    validateEnvironment({ NODE_ENV: 'production', API_KEY: '0123456789abcdef' }).API_KEY,
+    '0123456789abcdef',
+  );
   const defaults = validateEnvironment({ BATCH_SIZE: '7', PORT: '' });
   assert.equal(defaults.BATCH_SIZE, 7);
   assert.equal(defaults.PORT, 3000);
