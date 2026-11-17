@@ -11,7 +11,7 @@ flowchart LR
   BQ --> W[Batch processor]
   W --> A[Xbyte adapter and mapping]
   A --> P[Pure transformation stages]
-  P --> DB[(Target Mongo: output, quarantine, receipts, counters)]
+  P --> DB[(Target Mongo: output, quarantine, receipts)]
   BQ -->|exhausted attempts| DLQ[Dead-letter queue]
 ```
 
@@ -44,8 +44,9 @@ Shared: PersistenceModule (repositories), QueuesModule (registered queues), Prov
 | `src/processing/dispatcher.service.ts`      | Read source IDs in pages; save and enqueue batches                      |
 | `src/processing/batch.processor.ts`         | Batch worker: concurrency, terminal failure                             |
 | `src/processing/batch.service.ts`           | Transform batch documents; dead-letter exhausted batches                |
-| `src/processing/document-writer.service.ts` | Save one document's entities, issues, counters and receipt              |
-| `src/processing/run-finalizer.service.ts`   | Decide when a run is finished and with which status                     |
+| `src/processing/document-writer.service.ts` | Save one document's entities, issues and receipt (with its counters)    |
+| `src/processing/run-finalizer.service.ts`   | Decide when a run is finished and with which status; snapshot counters  |
+| `src/processing/recovery.service.ts`        | On startup, re-enqueue the jobs of unfinished runs                      |
 | `src/persistence/*.repository.ts`           | One repository per MongoDB collection                                   |
 | `src/providers/xbyte/adapter.ts`            | Expand provider envelopes and apply its field mapping                   |
 | `src/providers/xbyte/mapping.ts`            | Plain field-name mapping and provider conversions                       |
@@ -82,11 +83,11 @@ For each entity, `EntitiesRepository.save()` inserts missing keys and replaces e
 
 1. Save the run and enqueue its dispatcher job directly.
 2. For each page, save a batch, enqueue it with a stable job ID, then advance the source checkpoint. A dispatcher retry can repeat a page safely: the same page produces the same batch and job ID, finished jobs are kept for 24 hours for deduplication, and a batch that is no longer pending is skipped.
-3. Check receipt key `{run}/{source}/{sourceId}`. If it exists, skip that document. Otherwise save its entities, upsert quarantine issues, update counters, then save the receipt.
-4. Mark the batch completed after all its documents finish. Finish the run only after scheduling is done and no pending batches remain.
+3. Look up the batch's receipts (key `{run}/{source}/{sourceId}`) in one query and skip documents that have one. For the others, save entities and upsert quarantine issues, then save the receipt with that document's counters. Run totals are the sum over receipts, so they never double count.
+4. Mark the batch completed after all its documents finish. Finish the run only after scheduling is done and no pending batches remain; the finalizer checks for pending batches before summing the receipts, so the totals it stores are final. The run that wins the finish update deletes its receipts.
 5. Dependency errors fail BullMQ jobs. Configurable attempts and exponential backoff apply. On the final attempt, the processor itself quarantines documents without receipts, marks the batch dead and publishes a DLQ reference before failing the job. Because this runs inside the job, a crash part-way leaves the job stalled and BullMQ runs it again; every step is idempotent.
 6. On shutdown, processors close their workers in `beforeApplicationShutdown`, before MongoDB and Redis close. An active dispatch stops after its current page and moves itself back to the delayed set without using a retry attempt; it resumes from its checkpoint on the next start.
 
-These operations are separate. A crash before the receipt is saved can leave partial output or inaccurate counters. A standalone MongoDB server is sufficient; transactions would require a replica set.
+These operations are separate. A crash before the receipt is saved can leave partial output until the retry repeats the idempotent writes. A standalone MongoDB server is sufficient; transactions would require a replica set.
 
-BullMQ handles ordinary worker stalls and retries while Redis retains its jobs. There is no reconciler or transactional outbox: a crash between run creation and enqueueing, or loss of Redis jobs, needs manual intervention or a new run. Source data must stay immutable. Run one application instance.
+BullMQ handles ordinary worker stalls and retries while Redis retains its jobs. On startup, `RecoveryService` re-enqueues the dispatcher job of every running run that has not finished dispatching, and the job of every pending batch otherwise. Stable job IDs make this a no-op for jobs Redis still holds, so it repairs a crash between run creation and enqueueing, and lost Redis jobs, at the next restart. Source data must stay immutable. Run one application instance.
