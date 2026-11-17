@@ -3,7 +3,7 @@ import { AnyBulkWriteOperation, Collection, Filter } from 'mongodb';
 import { Issue, Source } from '../core/contracts';
 import { digest } from '../core/helpers';
 import { QUARANTINE } from './collections';
-import { QuarantinedIssueDocument } from './documents';
+import { ErrorSample, QuarantinedIssueDocument } from './documents';
 import { MongoService } from './mongo.service';
 
 export interface QuarantinePage {
@@ -38,6 +38,16 @@ export class QuarantineRepository {
       }),
     );
     await this.quarantine.bulkWrite(operations, { ordered: false });
+  }
+
+  /** The first `size` issues of a run (in cursor order), for the run summary. */
+  async sample(runId: string, size: number): Promise<ErrorSample[]> {
+    return this.quarantine
+      .find({ runId }, { projection: { _id: 0, sourceId: 1, path: 1, reason: 1 } })
+      .sort({ _id: 1 })
+      .limit(size)
+      .map(({ sourceId, path, reason }) => ({ sourceId, path, reason }))
+      .toArray();
   }
 
   /** Keyset pagination by _id. `next` is the cursor for the following page, or null. */

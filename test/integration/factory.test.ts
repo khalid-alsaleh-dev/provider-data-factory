@@ -188,9 +188,11 @@ test(
           source: 'restaurants',
           sourceId: restaurantId.toHexString(),
         });
-        await app!
-          .get(DocumentWriter)
-          .write(run._id, batch._id, 'restaurants', restaurantId.toHexString(), result);
+        // Written twice, as after a crash before the batch completed: still counted once.
+        for (let i = 0; i < 2; i++)
+          await app!
+            .get(DocumentWriter)
+            .write(run._id, batch._id, 'restaurants', restaurantId.toHexString(), result);
         await until(
           () => mongo.target.collection<any>('runs').findOne({ _id: run._id }),
           (r) => r.dispatchDone,
@@ -203,12 +205,12 @@ test(
         await batchQueue.resume();
         const finished = await waitRun(run._id);
         assert.equal(finished.counters.read, 1);
+        assert.equal(finished.counters.written + finished.counters.skipped, 2);
         assert.equal(finished.status, 'completed');
+        // The final counters live on the run; its receipts are no longer needed.
         assert.equal(
-          await mongo.target
-            .collection('receipts')
-            .countDocuments({ _id: `${run._id}/restaurants/${restaurantId.toHexString()}` } as any),
-          1,
+          await mongo.target.collection('receipts').countDocuments({ runId: run._id }),
+          0,
         );
       });
       await t.test(

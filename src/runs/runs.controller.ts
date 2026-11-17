@@ -23,8 +23,6 @@ import {
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiKeyGuard } from '../common/api-key.guard';
-import { RunDocument } from '../persistence/documents';
-import { QuarantinePage } from '../persistence/quarantine.repository';
 import { CreateRunDto } from './dto/create-run.dto';
 import { ListErrorsQueryDto } from './dto/list-errors-query.dto';
 import { CheckpointResponse, RunErrorsPageResponse, RunResponse } from './dto/run.response';
@@ -49,7 +47,7 @@ export class RunsController {
   @ApiAcceptedResponse({ type: RunResponse })
   @ApiBadRequestResponse({ description: 'Invalid request body.' })
   @ApiTooManyRequestsResponse({ description: 'Too many runs started in the last minute.' })
-  create(@Body() body: CreateRunDto): Promise<RunDocument> {
+  create(@Body() body: CreateRunDto): Promise<RunResponse> {
     return this.runs.create(body);
   }
 
@@ -57,7 +55,7 @@ export class RunsController {
   @ApiOperation({ summary: 'Status, timing, counters and an error sample of a run.' })
   @ApiOkResponse({ type: RunResponse })
   @ApiNotFoundResponse({ description: 'Unknown run.' })
-  findOne(@Param('id') id: string): Promise<RunDocument> {
+  findOne(@Param('id') id: string): Promise<RunResponse> {
     return this.runs.findOne(id);
   }
 
@@ -66,7 +64,10 @@ export class RunsController {
   @ApiOkResponse({ type: RunErrorsPageResponse })
   @ApiBadRequestResponse({ description: 'Invalid query parameters.' })
   @ApiNotFoundResponse({ description: 'Unknown run.' })
-  listErrors(@Param('id') id: string, @Query() query: ListErrorsQueryDto): Promise<QuarantinePage> {
+  listErrors(
+    @Param('id') id: string,
+    @Query() query: ListErrorsQueryDto,
+  ): Promise<RunErrorsPageResponse> {
     return this.runs.listErrors(id, query);
   }
 }

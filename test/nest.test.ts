@@ -14,8 +14,9 @@ import { Test } from '@nestjs/testing';
 import { Job } from 'bullmq';
 import { ApiKeyGuard } from '../src/common/api-key.guard';
 import { BatchesRepository } from '../src/persistence/batches.repository';
-import { RunDocument } from '../src/persistence/documents';
+import { RunCounters, RunDocument } from '../src/persistence/documents';
 import { QuarantineRepository } from '../src/persistence/quarantine.repository';
+import { ReceiptsRepository } from '../src/persistence/receipts.repository';
 import { RunsRepository } from '../src/persistence/runs.repository';
 import { SourceRepository } from '../src/persistence/source.repository';
 import { isFinalAttempt } from '../src/processing/attempts';
@@ -104,6 +105,7 @@ test('RunsService saves the run, fixes upper bounds and enqueues one dispatch jo
         },
       },
       { provide: QuarantineRepository, useValue: {} },
+      { provide: ReceiptsRepository, useValue: {} },
       {
         provide: SourceRepository,
         useValue: { upper: async (source: string) => `${source}-upper` },
@@ -137,6 +139,7 @@ test('RunsService saves the run, fixes upper bounds and enqueues one dispatch jo
         },
       },
       { provide: QuarantineRepository, useValue: {} },
+      { provide: ReceiptsRepository, useValue: {} },
       { provide: SourceRepository, useValue: { upper: async () => undefined } },
       {
         provide: getQueueToken(DISPATCH_QUEUE),
@@ -152,45 +155,106 @@ test('RunsService saves the run, fixes upper bounds and enqueues one dispatch jo
   assert.equal(failed.length, 1);
 });
 
+const totals = (overrides: Partial<RunCounters> = {}): RunCounters => ({
+  read: 1,
+  transformed: 1,
+  written: 1,
+  skipped: 0,
+  failed: 0,
+  ...overrides,
+});
+
+async function finalizer(options: {
+  run: RunDocument;
+  pending?: boolean;
+  dead?: boolean;
+  counters?: RunCounters;
+  calls?: string[];
+  finished?: { status: string; counters: RunCounters }[];
+  finishWins?: boolean;
+}) {
+  const calls = options.calls ?? [];
+  const finished = options.finished ?? [];
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      RunFinalizer,
+      {
+        provide: RunsRepository,
+        useValue: {
+          findById: async () => options.run,
+          finish: async (_id: string, status: string, _start: Date, counters: RunCounters) => {
+            finished.push({ status, counters });
+            return options.finishWins ?? true;
+          },
+        },
+      },
+      {
+        provide: BatchesRepository,
+        useValue: {
+          hasStatus: async (_id: string, status: string) => {
+            calls.push(`hasStatus:${status}`);
+            return status === 'pending' ? !!options.pending : !!options.dead;
+          },
+        },
+      },
+      {
+        provide: ReceiptsRepository,
+        useValue: {
+          totals: async () => {
+            calls.push('totals');
+            return options.counters ?? totals();
+          },
+          deleteForRun: async () => calls.push('deleteReceipts'),
+        },
+      },
+      { provide: QuarantineRepository, useValue: { sample: async () => [] } },
+    ],
+  }).compile();
+  return moduleRef.get(RunFinalizer);
+}
+
 test('RunFinalizer waits for dispatch and pending batches, then picks the status', async () => {
-  const cases: { run: RunDocument; pending: boolean; dead: boolean; expected?: string }[] = [
-    { run: run({ dispatchDone: false }), pending: false, dead: false },
-    { run: run(), pending: true, dead: false },
-    { run: run({ status: 'completed' }), pending: false, dead: false },
-    { run: run(), pending: false, dead: false, expected: 'completed' },
-    {
-      run: run({ counters: { read: 1, transformed: 0, written: 0, skipped: 0, failed: 2 } }),
-      pending: false,
-      dead: false,
-      expected: 'completed_with_errors',
-    },
-    { run: run(), pending: false, dead: true, expected: 'failed' },
-    { run: run({ dispatchFailed: true }), pending: false, dead: false, expected: 'failed' },
+  const cases: {
+    run: RunDocument;
+    pending?: boolean;
+    dead?: boolean;
+    counters?: RunCounters;
+    expected?: string;
+  }[] = [
+    { run: run({ dispatchDone: false }) },
+    { run: run(), pending: true },
+    { run: run({ status: 'completed' }) },
+    { run: run(), expected: 'completed' },
+    { run: run(), counters: totals({ failed: 2 }), expected: 'completed_with_errors' },
+    { run: run(), dead: true, expected: 'failed' },
+    { run: run({ dispatchFailed: true }), expected: 'failed' },
   ];
-  for (const { run: current, pending, dead, expected } of cases) {
-    const finished: string[] = [];
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        RunFinalizer,
-        {
-          provide: RunsRepository,
-          useValue: {
-            findById: async () => current,
-            finish: async (_id: string, status: string) => finished.push(status),
-          },
-        },
-        {
-          provide: BatchesRepository,
-          useValue: {
-            hasStatus: async (_id: string, status: string) =>
-              status === 'pending' ? pending : dead,
-          },
-        },
-      ],
-    }).compile();
-    await moduleRef.get(RunFinalizer).finishIfComplete(current._id);
-    assert.deepEqual(finished, expected ? [expected] : []);
+  for (const options of cases) {
+    const finished: { status: string; counters: RunCounters }[] = [];
+    await (await finalizer({ ...options, finished })).finishIfComplete(options.run._id);
+    assert.deepEqual(
+      finished.map((f) => f.status),
+      options.expected ? [options.expected] : [],
+    );
   }
+});
+
+test('RunFinalizer reads totals only after no batch is pending, and stores them on finish', async () => {
+  const calls: string[] = [];
+  const finished: { status: string; counters: RunCounters }[] = [];
+  const counters = totals({ read: 7, failed: 3 });
+  await (await finalizer({ run: run(), counters, calls, finished })).finishIfComplete('run-1');
+  // Regression: totals read before the pending check could be stale and pick the wrong status.
+  assert.ok(calls.indexOf('hasStatus:pending') < calls.indexOf('totals'));
+  assert.deepEqual(finished, [{ status: 'completed_with_errors', counters }]);
+  assert.equal(calls.at(-1), 'deleteReceipts');
+
+  // A worker that loses the race to finish the run leaves the receipts alone.
+  const loser: string[] = [];
+  await (
+    await finalizer({ run: run(), calls: loser, finishWins: false })
+  ).finishIfComplete('run-1');
+  assert.ok(!loser.includes('deleteReceipts'));
 });
 
 test('ApiKeyGuard is open without API_KEY and checks the header when configured', () => {

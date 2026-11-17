@@ -34,10 +34,12 @@ export class BatchService {
     const batch = await this.batches.getById(batchId);
     if (batch.status !== 'pending') return;
 
-    const documents = await this.source.get(batch.source, batch.ids);
+    // One receipt lookup per batch; documents finished by an earlier attempt are not even read.
+    const remaining = await this.writer.unprocessed(batch.runId, batch.source, batch.ids);
+    const documents = remaining.length > 0 ? await this.source.get(batch.source, remaining) : [];
     const documentsById = new Map(documents.map((document) => [String(document._id), document]));
 
-    for (const sourceId of batch.ids) {
+    for (const sourceId of remaining) {
       const raw = documentsById.get(sourceId);
       const result = raw
         ? transform(this.adapter, raw, { source: batch.source, sourceId })
@@ -65,7 +67,8 @@ export class BatchService {
         duplicates: 0,
         issues: [{ path: '$', reason: `Retries exhausted: ${reason}` }],
       };
-      for (const sourceId of batch.ids) {
+      const remaining = await this.writer.unprocessed(batch.runId, batch.source, batch.ids);
+      for (const sourceId of remaining) {
         await this.writer.write(batch.runId, batch._id, batch.source, sourceId, failure);
       }
     }

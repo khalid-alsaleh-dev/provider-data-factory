@@ -19,6 +19,9 @@ export interface RunCounters {
   failed: number;
 }
 
+/** How many quarantined issues a run summary shows. */
+export const ERROR_SAMPLE_SIZE = 10;
+
 export interface ErrorSample {
   sourceId: string;
   path: string;
@@ -36,7 +39,9 @@ export interface RunDocument {
   dispatchError?: string;
   limit?: number;
   checkpoints: Partial<Record<Source, Checkpoint>>;
+  /** Final totals, stored when the run finishes. While it runs, totals are summed from receipts. */
   counters: RunCounters;
+  /** First quarantined issues, stored when the run finishes. */
   errorSample: ErrorSample[];
 }
 
@@ -59,6 +64,13 @@ export interface QuarantinedIssueDocument extends Issue {
   sourceId: string;
 }
 
+/** Marks one source document as processed within a run and holds its share of the run counters. */
 export interface ReceiptDocument {
   _id: string;
+  runId: string;
+  counters: RunCounters;
+}
+
+export function emptyCounters(): RunCounters {
+  return { read: 0, transformed: 0, written: 0, skipped: 0, failed: 0 };
 }

@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { sources } from '../../core/contracts';
 import { RunStatus } from '../../persistence/documents';
 
-// Response shapes for the OpenAPI document. The service returns the stored documents, which match them.
+// HTTP response shapes. RunsService maps stored documents to them explicitly.
 
 export class CheckpointResponse {
   @ApiPropertyOptional({ description: 'Highest source id included in the run.' })

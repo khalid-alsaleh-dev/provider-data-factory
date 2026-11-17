@@ -8,7 +8,7 @@ import { BatchesRepository } from '../persistence/batches.repository';
 import { Checkpoint, RunDocument } from '../persistence/documents';
 import { RunsRepository } from '../persistence/runs.repository';
 import { SourceRepository } from '../persistence/source.repository';
-import { BATCHES_QUEUE, BatchJobData } from '../queues/queue-names';
+import { BATCHES_QUEUE, BatchJobData, enqueueBatch } from '../queues/queue-names';
 import { RunFinalizer } from './run-finalizer.service';
 
 export type DispatchOutcome = 'done' | 'interrupted';
@@ -62,11 +62,7 @@ export class DispatcherService {
       if (ids.length === 0) break;
 
       const batch = await this.batches.create(run._id, collection, ids);
-      await this.batchQueue.add(
-        'batch',
-        { batchId: batch._id, runId: run._id },
-        { jobId: batch._id },
-      );
+      await enqueueBatch(this.batchQueue, run._id, batch._id);
 
       // Save progress after enqueueing. A retry re-reads the same page, producing the same
       // batch and job ID, so nothing is enqueued twice.

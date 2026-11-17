@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { Db, MongoClient } from 'mongodb';
 import { EnvironmentVariables } from '../config/environment';
-import { BATCHES, QUARANTINE, RUNS } from './collections';
+import { BATCHES, QUARANTINE, RECEIPTS, RUNS } from './collections';
 
 /** Owns the MongoDB client. `raw` is read-only provider input; `target` holds output and bookkeeping. */
 @Injectable()
@@ -30,6 +30,7 @@ export class MongoService implements OnModuleInit, OnApplicationShutdown {
       this.target.collection(QUARANTINE).createIndex({ runId: 1, _id: 1 }),
       this.target.collection(BATCHES).createIndex({ runId: 1, status: 1 }),
       this.target.collection(RUNS).createIndex({ status: 1 }),
+      this.target.collection(RECEIPTS).createIndex({ runId: 1 }),
     ]);
   }
 
