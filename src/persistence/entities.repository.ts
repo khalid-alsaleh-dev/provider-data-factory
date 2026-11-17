@@ -27,7 +27,7 @@ export class EntitiesRepository {
       const document: StoredEntity = {
         _id: entity.key,
         ...entity.data,
-        provider: entity.key.split('/')[0],
+        provider: entity.provider,
         _version: entity.version,
       };
       const list = operations.get(entity.collection) ?? [];

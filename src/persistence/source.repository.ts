@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Collection, Document, ObjectId } from 'mongodb';
-import { Adapter, Source, SourcePort } from '../core/contracts';
+import { Adapter, Source } from '../core/contracts';
 import { ADAPTER } from '../providers/providers.module';
 import { MongoService } from './mongo.service';
 
 /** Read-only access to the raw provider collections. */
 @Injectable()
-export class SourceRepository implements SourcePort {
+export class SourceRepository {
   constructor(
     private readonly mongo: MongoService,
     @Inject(ADAPTER) private readonly adapter: Adapter,

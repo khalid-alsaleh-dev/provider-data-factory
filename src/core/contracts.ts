@@ -16,6 +16,7 @@ export interface Context {
   sourceId: string;
 }
 export interface Entity {
+  provider: string;
   collection: Collection;
   key: string;
   version: string;
@@ -42,17 +43,4 @@ export interface Candidate {
   path: string;
   value: Record<string, unknown>;
   version: string;
-}
-export interface SourcePort {
-  page(source: Source, after: string | undefined, upper: string, limit: number): Promise<string[]>;
-  get(source: Source, ids: string[]): Promise<Record<string, unknown>[]>;
-}
-export interface WorkPort {
-  process(
-    runId: string,
-    batchId: string,
-    source: Source,
-    sourceId: string,
-    result: Result,
-  ): Promise<void>;
 }

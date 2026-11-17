@@ -46,6 +46,7 @@ export function normalise(candidate: Candidate): Candidate {
 
 export function map(candidate: Candidate, provider: string): Entity {
   return {
+    provider,
     collection: candidate.collection,
     key: entityKey(provider, candidate.collection, candidate.value),
     version: candidate.version,

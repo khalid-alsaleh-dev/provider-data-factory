@@ -54,6 +54,7 @@ test('generic map and projection use natural keys and reject unknown or invalid 
 });
 test('deduplication is independent of candidate order; later version wins', () => {
   const a = {
+    provider: 'p',
     collection: 'locations' as const,
     key: 'p/locations/7',
     version: '1',
